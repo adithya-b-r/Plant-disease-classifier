@@ -5,7 +5,7 @@
       "name": "plant-disease-classifier",
       "runtime": "python-3.10",
       "path": ".",
-      "entrypoint": "src.app.main",
+      "entrypoint": "app.main",
       "execute": ["any"],
       "events": [],
       "schedule": "",

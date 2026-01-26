@@ -36,36 +36,4 @@ def build_response(status_code: int, payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def main(req, res):  # Appwrite entrypoint
-    """Handle image classification requests.
-
-    Expected usage: POST raw image bytes with Content-Type image/jpeg or image/png.
-    Multipart may work if req.body contains the file bytes only; otherwise, prefer raw bytes.
-    """
-
-    try:
-        load_resources()
-    except Exception:
-        return res.json(build_response(500, {"error": "Failed to load model"}))
-
-    content_type = getattr(req, "content_type", "") or req.headers.get("content-type", "")
-    if "image" not in content_type:
-        return res.json(build_response(400, {"error": "Content-Type must be image/jpeg or image/png"}))
-
-    body = getattr(req, "body", None)
-    if body in (None, b""):
-        return res.json(build_response(400, {"error": "Request body is empty"}))
-
-    # If Appwrite passes body as str, convert to bytes.
-    if isinstance(body, str):
-        body = body.encode()
-
-    try:
-        img_array = preprocess_image(body)
-        predictions = model.predict(img_array)
-        disease_idx = int(np.argmax(predictions[0]))
-        disease = class_names[disease_idx]
-        confidence = float(predictions[0][disease_idx] * 100)
-    except Exception:
-        return res.json(build_response(400, {"error": "Could not process image"}))
-
-    return res.json(build_response(200, {"disease": disease, "confidence": confidence}))
+    return res.json({"ok": True})

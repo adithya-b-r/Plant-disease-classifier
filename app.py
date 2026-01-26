@@ -1,39 +1,66 @@
 import io
 import json
-from typing import Any, Dict, List
+from typing import List
 
 import numpy as np
 import tensorflow as tf
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.responses import JSONResponse
 from PIL import Image
 
-# Appwrite Functions: expose a `main(req, res)` handler. Everything else is module-level
-# to take advantage of cold-start caching across invocations.
+app = FastAPI(title="Plant Disease Classifier", version="1.0.0")
 
 model: tf.keras.Model | None = None
 class_names: List[str] = []
 
 
 def load_resources() -> None:
-    """Load the TensorFlow model and class labels once per cold start."""
     global model, class_names
-    if model is None:
-        model = tf.keras.models.load_model("models/plant_disease_model.keras")
-    if not class_names:
-        with open("models/class_names.json", "r", encoding="utf-8") as f:
-            class_names.extend(json.load(f))
+    model = tf.keras.models.load_model("models/plant_disease_model.keras")
+    with open("models/class_names.json", "r", encoding="utf-8") as f:
+        class_names = json.load(f)
 
 
 def preprocess_image(file_bytes: bytes) -> np.ndarray:
-    """Resize and normalize the uploaded image for the model."""
-    image = Image.open(io.BytesIO(file_bytes)).convert("RGB")
+    try:
+        image = Image.open(io.BytesIO(file_bytes)).convert("RGB")
+    except Exception as exc:  # pragma: no cover - defensive guard
+        raise HTTPException(status_code=400, detail="Invalid image file") from exc
+
     image = image.resize((128, 128))
     img_array = np.array(image) / 255.0
     return np.expand_dims(img_array, axis=0)
 
 
-def build_response(status_code: int, payload: Dict[str, Any]) -> Dict[str, Any]:
-    return {"statusCode": status_code, "headers": {"Content-Type": "application/json"}, "body": json.dumps(payload)}
+@app.on_event("startup")
+def startup_event() -> None:
+    load_resources()
 
 
-def main(req, res):  # Appwrite entrypoint
-    return res.json({"ok": True})
+@app.get("/health")
+def health() -> JSONResponse:
+    return JSONResponse({"status": "ok"})
+
+
+@app.post("/predict")
+async def predict(file: UploadFile = File(...)) -> JSONResponse:
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="File is required")
+
+    if file.content_type not in {"image/jpeg", "image/png", "image/jpg"}:
+        raise HTTPException(status_code=400, detail="File must be an image (jpg or png)")
+
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="File is empty")
+
+    if model is None or not class_names:
+        raise HTTPException(status_code=500, detail="Model is not loaded")
+
+    img_array = preprocess_image(file_bytes)
+    predictions = model.predict(img_array)
+    disease_idx = int(np.argmax(predictions[0]))
+    disease = class_names[disease_idx]
+    confidence = float(predictions[0][disease_idx] * 100)
+
+    return JSONResponse({"disease": disease, "confidence": confidence})
